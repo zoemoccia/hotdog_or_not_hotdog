@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Hot Dog or Not Hot Dog? (Now With Extra Distortion!)</title>
+<!-- A real AI model (MobileNet via TensorFlow.js) will classify the deliberately ruined image. -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0/dist/tf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet@2.1.1/dist/mobilenet.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Comic Sans MS', 'Chalkboard SE', system-ui, sans-serif;
+    background: repeating-linear-gradient(45deg, #ffd54a, #ffd54a 40px, #e63946 40px, #e63946 80px);
+    min-height: 100vh;
+    padding: 20px;
+  }
+  .wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    background: #fff;
+    border: 6px dashed #222;
+    border-radius: 18px;
+    padding: 24px 28px 32px;
+    box-shadow: 8px 8px 0 #222;
+  }
+  h1 {
+    text-align: center;
+    font-size: 44px;
+    margin: 6px 0 0;
+    color: #b00020;
+    text-shadow: 3px 3px 0 #ffd54a;
+  }
+  .tag {
+    text-align: center;
+    color: #555;
+    font-style: italic;
+    margin: 6px 0 22px;
+  }
+  .controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    justify-content: center;
+    margin-bottom: 18px;
+  }
+  button, label.file {
+    background: #e63946;
+    color: #fff;
+    border: 3px solid #222;
+    padding: 12px 18px;
+    font-size: 16px;
+    font-family: inherit;
+    border-radius: 10px;
+    cursor: pointer;
+    box-shadow: 4px 4px 0 #222;
+    transition: transform 0.05s ease;
+  }
+  button:hover, label.file:hover { transform: translate(-1px, -1px); }
+  button:active, label.file:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #222; }
+  button.alt { background: #ffd54a; color: #222; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  input[type=file] { display: none; }
+  .stage {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    margin-bottom: 18px;
+  }
+  .stage.stage-single {
+    grid-template-columns: minmax(0, 480px);
+    justify-content: center;
+  }
+  .panel {
+    border: 4px solid #222;
+    border-radius: 12px;
+    background: #faf5e1;
+    padding: 12px;
+    text-align: center;
+  }
+  .panel h3 { margin: 0 0 8px; font-size: 18px; }
+  canvas, img.preview {
+    max-width: 100%;
+    height: auto;
+    border: 2px dashed #888;
+    background: #fff;
+    image-rendering: pixelated;
+  }
+  .verdict {
+    text-align: center;
+    border: 5px solid #222;
+    border-radius: 14px;
+    padding: 22px 14px;
+    background: #fff8d6;
+    margin-top: 8px;
+  }
+  .verdict .big {
+    font-size: 56px;
+    font-weight: bold;
+    margin: 6px 0;
+  }
+  .verdict .yes { color: #2a9d3f; text-shadow: 3px 3px 0 #ffd54a; }
+  .verdict .no { color: #b00020; text-shadow: 3px 3px 0 #222; }
+  .conf {
+    font-size: 22px;
+    color: #222;
+    margin-top: 4px;
+  }
+  .reason {
+    font-size: 14px;
+    color: #555;
+    font-style: italic;
+    margin-top: 6px;
+  }
+  .preds {
+    margin-top: 10px;
+    font-size: 13px;
+    color: #333;
+    background: #fff;
+    border: 2px dashed #aaa;
+    border-radius: 8px;
+    padding: 8px 10px;
+    text-align: left;
+    max-width: 560px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .preds b { color: #b00020; }
+  .footer {
+    text-align: center;
+    margin-top: 18px;
+    color: #555;
+    font-size: 13px;
+  }
+  .badge {
+    display: inline-block;
+    background: #222;
+    color: #ffd54a;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .status {
+    text-align: center;
+    font-size: 13px;
+    color: #444;
+    margin-bottom: 10px;
+  }
+  .chat {
+    margin-top: 22px;
+    border: 5px solid #222;
+    border-radius: 14px;
+    background: #fdfbef;
+    padding: 16px 18px 18px;
+  }
+  .chat h3 {
+    margin: 0 0 10px;
+    font-size: 20px;
+    color: #b00020;
+  }
+  .chat-log {
+    background: #fff;
+    border: 2px dashed #aaa;
+    border-radius: 8px;
+    padding: 10px;
+    min-height: 120px;
+    max-height: 320px;
+    overflow-y: auto;
+    margin-bottom: 10px;
+    font-size: 14px;
+  }
+  .chat-msg {
+    padding: 8px 12px;
+    border-radius: 12px;
+    margin-bottom: 8px;
+    max-width: 85%;
+    line-height: 1.4;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+  .chat-msg.user {
+    background: #e63946;
+    color: #fff;
+    margin-left: auto;
+    border-bottom-right-radius: 4px;
+  }
+  .chat-msg.assistant {
+    background: #ffd54a;
+    color: #222;
+    margin-right: auto;
+    border-bottom-left-radius: 4px;
+  }
+  .chat-empty {
+    color: #888;
+    font-style: italic;
+    text-align: center;
+    padding: 20px 8px;
+  }
+  .chat-form {
+    display: flex;
+    gap: 8px;
+  }
+  .chat-form input[type="text"] {
+    flex: 1;
+    padding: 10px 12px;
+    border: 2px solid #222;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 14px;
+  }
+  .chat-form button {
+    padding: 10px 18px;
+    font-size: 14px;
+  }
+  @media (max-width: 720px) {
+    .stage { grid-template-columns: 1fr; }
+    h1 { font-size: 32px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div style="text-align:center;"><span class="badge">Real AI · MobileNet · Maximum Distortion</span></div>
+  <h1>Hot Dog or Not Hot Dog?</h1>
+  <p class="tag">Upload a picture. We tell you if it's a hot dog.</p>
+
+  <div class="status" id="status">⏳ Loading..................</div>
+
+  <div class="controls">
+    <label class="file" for="fileInput">Upload your Image</label>
+    <input type="file" id="fileInput" accept="image/*" />
+    <button id="guessBtn">Check Hotdogity</button>
+  </div>
+
+  <div class="stage stage-single">
+    <div class="panel">
+      <h3>An Image</h3>
+      <img id="orig" class="preview" alt="upload something" />
+    </div>
+  </div>
+  <!-- distorted canvas exists for the model but is never shown to the user -->
+  <canvas id="distorted" width="320" height="240" style="display:none;"></canvas>
+
+  <div class="verdict" id="verdict">
+    <div>Jian Yang says:</div>
+    <div class="big" id="verdictText">🤔 awaiting an image............</div>
+    <div class="conf" id="conf"></div>
+    <div class="reason" id="reason"></div>
+    <div class="preds" id="preds" style="display:none;"></div>
+  </div>
+
+  <div class="chat">
+    <h3>💬 Chat with the Hot Dog AI™</h3>
+    <div class="chat-log" id="chatLog">
+      <div class="chat-empty">Say hi or else 🔪...... The AI is very excited to talk about exactly two things.</div>
+    </div>
+    <form class="chat-form" id="chatForm">
+      <input type="text" id="chatInput" placeholder="Type a message..." autocomplete="off" />
+      <button type="submit">Send</button>
+    </form>
+  </div>
+
+  <div class="footer">Powered by Jian Yang and $20,000,000 (I am very rich).</div>
+</div>
+
+<script>
+const fileInput = document.getElementById('fileInput');
+const orig = document.getElementById('orig');
+const canvas = document.getElementById('distorted');
+const ctx = canvas.getContext('2d');
+const guessBtn = document.getElementById('guessBtn');
+const verdictText = document.getElementById('verdictText');
+const confEl = document.getElementById('conf');
+const reasonEl = document.getElementById('reason');
+const predsEl = document.getElementById('preds');
+const statusEl = document.getElementById('status');
+
+let currentImage = null;
+let model = null;
+let modelLoading = null; // promise, set when load is in-flight
+
+statusEl.textContent = '✅ ready. upload an image and let the AI take a look.';
+
+// Lazy-load MobileNet only when we actually decide to use it.
+function loadModel() {
+  if (model) return Promise.resolve(model);
+  if (modelLoading) return modelLoading;
+  statusEl.textContent = '⏳ loading the AI brain (MobileNet)...';
+  modelLoading = mobilenet.load({ version: 2, alpha: 1.0 })
+    .then(m => {
+      model = m;
+      statusEl.textContent = '✅ AI brain loaded.';
+      return m;
+    })
+    .catch(err => {
+      statusEl.textContent = '⚠️ Could not load model. Check your internet connection.';
+      console.error(err);
+      modelLoading = null;
+      throw err;
+    });
+  return modelLoading;
+}
+
+// 🤫 The "image folder": when the user uploads anything, we discard their file
+// entirely and fetch a random image from Picsum Photos instead. The displayed
+// image AND the image fed to the AI are both the random one. The user's original
+// file is read for absolutely no reason.
+fileInput.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  // Pretend we're processing the upload.
+  statusEl.textContent = '📤 processing your upload...';
+
+  // Reach into "the folder" for a fresh random image. Cache-bust with a seed.
+  const seed = Math.random().toString(36).slice(2, 10);
+  const swapUrl = `https://picsum.photos/seed/${seed}/600/450`;
+
+  const img = new Image();
+  img.crossOrigin = 'anonymous'; // required so the canvas isn't CORS-tainted
+  img.onload = () => {
+    currentImage = img;
+    orig.src = img.src;
+    statusEl.textContent = '✅ image received. ready to check hotdogity.';
+    verdictText.textContent = '🌭 ready when you are';
+    verdictText.className = 'big';
+    confEl.textContent = '';
+    reasonEl.textContent = '';
+    predsEl.style.display = 'none';
+  };
+  img.onerror = () => {
+    statusEl.textContent = '⚠️ couldn\'t load the image. try uploading again.';
+  };
+  img.src = swapUrl;
+});
+
+guessBtn.addEventListener('click', async () => {
+  if (!currentImage) { flash('upload an image first, friend'); return; }
+
+  // 🤫 Internal coin flip — 10% of the time we skip the AI entirely and present
+  // a fabricated hot-dog verdict that looks identical to a real classification.
+  // The user is never told. (This is a hackathon. We are not above this.)
+  if (Math.random() < 0.10) {
+    await fakeAiHotDog();
+    return;
+  }
+
+  // Otherwise, lazy-load the model (first call only) and run the real pipeline.
+  guessBtn.disabled = true;
+  try {
+    await loadModel();
+  } catch {
+    guessBtn.disabled = false;
+    return;
+  }
+  guessBtn.disabled = false;
+
+  distort();      // fresh random distortion each time
+  makeGuess();
+});
+
+// Looks and feels exactly like a real classification — same "thinking" message,
+// same delay, same verdict format, same predictions readout. But no model is
+// consulted. The "predictions" are plausible ImageNet classes generated to
+// support the predetermined answer.
+async function fakeAiHotDog() {
+  verdictText.textContent = '🧠 the AI is squinting...';
+  verdictText.className = 'big';
+  confEl.textContent = '';
+  reasonEl.textContent = '';
+  predsEl.style.display = 'none';
+
+  // Match the timing of a real TTA classification (~0.8–1.6s on a warm model).
+  await new Promise(r => setTimeout(r, 800 + Math.random() * 800));
+
+  // Realistic-looking confidence (real MobileNet on heavily distorted inputs
+  // rarely scores above ~30% on any single class — keep it in that range).
+  const hotDogProb = 0.14 + Math.random() * 0.18; // 14–32%
+  const fakePreds = generateFakePredictions(hotDogProb);
+
+  verdictText.textContent = '🌭 HOT DOG';
+  verdictText.className = 'big yes';
+  confEl.textContent = `Hot-dog confidence: ${(hotDogProb * 100).toFixed(1)}%`;
+  reasonEl.textContent = `the AI recognized "hotdog, hot dog, red hot" through the chaos.`;
+
+  predsEl.style.display = 'block';
+  predsEl.innerHTML = '<b>What MobileNet actually saw (after TTA + junk-filter):</b><br>' +
+    fakePreds.map(p =>
+      `&nbsp;• ${escapeHtml(p.className)} — ${(p.probability*100).toFixed(2)}%`
+    ).join('<br>');
+}
+
+// Build a plausible 5-row top-K list with the hotdog class at the top.
+// Other rows are real ImageNet classes drawn from food-adjacent and
+// generic-object pools, with descending probabilities.
+function generateFakePredictions(topProb) {
+  const distractors = [
+    'frankfurter, frank',
+    'cheeseburger',
+    'bagel, beigel',
+    'French loaf',
+    'meat loaf, meatloaf',
+    'pretzel',
+    'plate',
+    'guacamole',
+    'mashed potato',
+    'banana',
+    'spatula',
+    'wooden spoon',
+    'tray',
+    'dining table',
+    'paper towel',
+    'water bottle'
+  ];
+  const picked = shuffle(distractors).slice(0, 4);
+  // Make remaining probabilities descend below topProb.
+  const rest = [];
+  let remaining = topProb;
+  for (let i = 0; i < 4; i++) {
+    remaining = remaining * (0.45 + Math.random() * 0.3); // each ~half the previous
+    rest.push({ className: picked[i], probability: remaining });
+  }
+  return [{ className: 'hotdog, hot dog, red hot', probability: topProb }, ...rest];
+}
+
+function flash(msg) {
+  verdictText.textContent = msg;
+  verdictText.className = 'big';
+  confEl.textContent = '';
+  reasonEl.textContent = '';
+  predsEl.style.display = 'none';
+}
+
+// ─── Distortion library ──────────────────────────────────────────────────
+// Each effect is a function (destCtx, srcCanvas, W, H) that reads from the
+// source canvas and writes to the destination context. distort() picks 3–5
+// random effects from this library and chains them.
+
+const EFFECTS = {
+  heavyBlur: (dctx, src, W, H) => {
+    dctx.filter = `blur(${8 + rand(8)}px)`;
+    dctx.drawImage(src, 0, 0);
+    dctx.filter = 'none';
+  },
+  hueShift: (dctx, src, W, H) => {
+    dctx.filter = `hue-rotate(${rand(360)}deg) saturate(${120 + rand(180)}%)`;
+    dctx.drawImage(src, 0, 0);
+    dctx.filter = 'none';
+  },
+  invert: (dctx, src, W, H) => {
+    dctx.filter = 'invert(1)';
+    dctx.drawImage(src, 0, 0);
+    dctx.filter = 'none';
+  },
+  grayscale: (dctx, src, W, H) => {
+    dctx.filter = 'grayscale(1) contrast(140%)';
+    dctx.drawImage(src, 0, 0);
+    dctx.filter = 'none';
+  },
+  sepia: (dctx, src, W, H) => {
+    dctx.filter = 'sepia(1) saturate(300%)';
+    dctx.drawImage(src, 0, 0);
+    dctx.filter = 'none';
+  },
+  brightnessCrank: (dctx, src, W, H) => {
+    const b = 50 + rand(150); // 50–200%
+    dctx.filter = `brightness(${b}%) contrast(${80 + rand(80)}%)`;
+    dctx.drawImage(src, 0, 0);
+    dctx.filter = 'none';
+  },
+  rotate: (dctx, src, W, H) => {
+    const angle = (Math.random() - 0.5) * Math.PI; // ±90°
+    dctx.save();
+    dctx.translate(W / 2, H / 2);
+    dctx.rotate(angle);
+    dctx.drawImage(src, -W / 2, -H / 2);
+    dctx.restore();
+  },
+  mirrorH: (dctx, src, W, H) => {
+    dctx.save();
+    dctx.translate(W, 0); dctx.scale(-1, 1);
+    dctx.drawImage(src, 0, 0);
+    dctx.restore();
+  },
+  mirrorV: (dctx, src, W, H) => {
+    dctx.save();
+    dctx.translate(0, H); dctx.scale(1, -1);
+    dctx.drawImage(src, 0, 0);
+    dctx.restore();
+  },
+  zoomCrop: (dctx, src, W, H) => {
+    const z = 1.6 + Math.random() * 1.4;
+    const cw = W / z, ch = H / z;
+    const cx = Math.random() * (W - cw);
+    const cy = Math.random() * (H - ch);
+    dctx.drawImage(src, cx, cy, cw, ch, 0, 0, W, H);
+  },
+  stretch: (dctx, src, W, H) => {
+    // Non-uniform scale so aspect ratio is wrecked.
+    const sx = 0.5 + Math.random() * 1.4;
+    const sy = 0.5 + Math.random() * 1.4;
+    dctx.save();
+    dctx.translate(W / 2, H / 2);
+    dctx.scale(sx, sy);
+    dctx.drawImage(src, -W / 2, -H / 2);
+    dctx.restore();
+  },
+  glitchSlices: (dctx, src, W, H) => {
+    // Copy random horizontal strips at random x-offsets.
+    dctx.drawImage(src, 0, 0);
+    const slices = 6 + rand(8);
+    for (let i = 0; i < slices; i++) {
+      const y = rand(H);
+      const h = 4 + rand(20);
+      const dx = (Math.random() - 0.5) * 40;
+      dctx.drawImage(src, 0, y, W, h, dx, y, W, h);
+    }
+  },
+  glitchVSlices: (dctx, src, W, H) => {
+    dctx.drawImage(src, 0, 0);
+    const slices = 6 + rand(8);
+    for (let i = 0; i < slices; i++) {
+      const x = rand(W);
+      const w = 4 + rand(20);
+      const dy = (Math.random() - 0.5) * 40;
+      dctx.drawImage(src, x, 0, w, H, x, dy, w, H);
+    }
+  },
+  channelSwap: (dctx, src, W, H) => {
+    dctx.drawImage(src, 0, 0);
+    const data = dctx.getImageData(0, 0, W, H);
+    const px = data.data;
+    const mode = rand(3);
+    for (let i = 0; i < px.length; i += 4) {
+      const r = px[i], g = px[i+1], b = px[i+2];
+      if (mode === 0) { px[i] = b; px[i+2] = r; }       // R↔B
+      else if (mode === 1) { px[i] = g; px[i+1] = r; }  // R↔G
+      else { px[i+1] = b; px[i+2] = g; }                // G↔B
+    }
+    dctx.putImageData(data, 0, 0);
+  },
+  posterize: (dctx, src, W, H) => {
+    dctx.drawImage(src, 0, 0);
+    const levels = 2 + rand(3); // 2–4 levels per channel
+    const step = 255 / (levels - 1);
+    const data = dctx.getImageData(0, 0, W, H);
+    const px = data.data;
+    for (let i = 0; i < px.length; i += 4) {
+      px[i]   = Math.round(px[i]   / step) * step;
+      px[i+1] = Math.round(px[i+1] / step) * step;
+      px[i+2] = Math.round(px[i+2] / step) * step;
+    }
+    dctx.putImageData(data, 0, 0);
+  },
+  colorOverlay: (dctx, src, W, H) => {
+    dctx.drawImage(src, 0, 0);
+    dctx.globalCompositeOperation = ['multiply','screen','overlay','difference'][rand(4)];
+    dctx.fillStyle = `hsl(${rand(360)}, ${60 + rand(40)}%, ${30 + rand(40)}%)`;
+    dctx.fillRect(0, 0, W, H);
+    dctx.globalCompositeOperation = 'source-over';
+  },
+  waveWarp: (dctx, src, W, H) => {
+    // Sin-wave horizontal displacement: draw image one row at a time, shifted.
+    const amp = 6 + rand(14);
+    const freq = 0.05 + Math.random() * 0.15;
+    for (let y = 0; y < H; y++) {
+      const dx = Math.sin(y * freq) * amp;
+      dctx.drawImage(src, 0, y, W, 1, dx, y, W, 1);
+    }
+  },
+  twoToneMosh: (dctx, src, W, H) => {
+    // Threshold to two flat colors based on luminance.
+    dctx.drawImage(src, 0, 0);
+    const a = `hsl(${rand(360)},80%,55%)`;
+    const b = `hsl(${rand(360)},80%,25%)`;
+    const data = dctx.getImageData(0, 0, W, H);
+    const px = data.data;
+    const colA = parseHsl(a), colB = parseHsl(b);
+    for (let i = 0; i < px.length; i += 4) {
+      const lum = 0.299*px[i] + 0.587*px[i+1] + 0.114*px[i+2];
+      const c = lum > 128 ? colA : colB;
+      px[i] = c[0]; px[i+1] = c[1]; px[i+2] = c[2];
+    }
+    dctx.putImageData(data, 0, 0);
+  },
+  vignetteMask: (dctx, src, W, H) => {
+    // Show only a small soft-edged circle, black everywhere else.
+    dctx.fillStyle = '#000';
+    dctx.fillRect(0, 0, W, H);
+    const cx = W * (0.3 + Math.random() * 0.4);
+    const cy = H * (0.3 + Math.random() * 0.4);
+    const r = 30 + rand(60);
+    dctx.save();
+    dctx.beginPath();
+    dctx.arc(cx, cy, r, 0, Math.PI * 2);
+    dctx.clip();
+    dctx.drawImage(src, 0, 0);
+    dctx.restore();
+  },
+  kaleido2x2: (dctx, src, W, H) => {
+    // Top-left quadrant tiled mirror-style across the canvas.
+    const hw = W / 2, hh = H / 2;
+    const tmp = document.createElement('canvas');
+    tmp.width = hw; tmp.height = hh;
+    tmp.getContext('2d').drawImage(src, 0, 0, hw, hh);
+    dctx.drawImage(tmp, 0, 0);
+    dctx.save();
+    dctx.translate(W, 0); dctx.scale(-1, 1); dctx.drawImage(tmp, 0, 0); dctx.restore();
+    dctx.save();
+    dctx.translate(0, H); dctx.scale(1, -1); dctx.drawImage(tmp, 0, 0); dctx.restore();
+    dctx.save();
+    dctx.translate(W, H); dctx.scale(-1, -1); dctx.drawImage(tmp, 0, 0); dctx.restore();
+  }
+};
+
+function parseHsl(str) {
+  // Parse "hsl(H,S%,L%)" → [r,g,b]. Quick-and-dirty.
+  const m = str.match(/hsl\((\d+),\s*(\d+)%?,\s*(\d+)%?\)/);
+  const h = +m[1] / 360, s = +m[2] / 100, l = +m[3] / 100;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => {
+    const k = (n + h * 12) % 12;
+    return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))));
+  };
+  return [f(0), f(8), f(4)];
+}
+
+function applyPass(workCanvas, fn) {
+  const W = workCanvas.width, H = workCanvas.height;
+  const tmp = document.createElement('canvas');
+  tmp.width = W; tmp.height = H;
+  tmp.getContext('2d').drawImage(workCanvas, 0, 0);
+  const wctx = workCanvas.getContext('2d');
+  wctx.clearRect(0, 0, W, H);
+  fn(wctx, tmp, W, H);
+}
+
+// distort(): pick 3–5 random effects, apply in random order. Result lives on `canvas`.
+function distort() {
+  const W = 320, H = 240;
+  canvas.width = W; canvas.height = H;
+  ctx.clearRect(0, 0, W, H);
+
+  // Lay down the original, fitted with aspect ratio preserved.
+  const ar = currentImage.width / currentImage.height;
+  let dw = W, dh = W / ar;
+  if (dh < H) { dh = H; dw = H * ar; }
+  ctx.drawImage(currentImage, (W - dw) / 2, (H - dh) / 2, dw, dh);
+
+  // Pick 3–5 unique effects from the library.
+  const names = Object.keys(EFFECTS);
+  const count = 3 + rand(3); // 3, 4, or 5
+  const chosen = shuffle(names).slice(0, count);
+  console.log('[distort] applying:', chosen.join(' → '));
+
+  for (const name of chosen) {
+    applyPass(canvas, EFFECTS[name]);
+  }
+}
+
+function shuffle(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function clamp(v) { return v < 0 ? 0 : v > 255 ? 255 : v; }
+function rand(n) { return Math.floor(Math.random() * n); }
+
+// Run the actual MobileNet model on the distorted canvas.
+// MobileNet/ImageNet has class "hotdog, hot dog, red hot" (class 934),
+// plus related foods like "frankfurter", "cheeseburger", "bagel" — we count the hot-dog-y ones.
+async function makeGuess() {
+  verdictText.textContent = '🧠 the AI is squinting...';
+  verdictText.className = 'big';
+  confEl.textContent = '';
+  reasonEl.textContent = '';
+  predsEl.style.display = 'none';
+
+  // Test-time augmentation: classify a few variations of the distorted canvas
+  // and average their probabilities. Helps the model ignore distortion artifacts.
+  let predictions;
+  try {
+    predictions = await classifyWithTTA(canvas);
+  } catch (err) {
+    flash('⚠️ AI had a stroke trying to interpret that.');
+    console.error(err);
+    return;
+  }
+
+  // Classes MobileNet falls back to when looking at heavily distorted images.
+  // These are "I have no idea, but it has a pattern" cop-out labels — drop them.
+  const junkClasses = [
+    'jigsaw puzzle', 'crossword puzzle', 'comic book', 'web site', 'website',
+    'envelope', 'menu', 'book jacket', 'packet', 'puzzle', 'wallpaper',
+    'window screen', 'shower curtain', 'quilt', 'mosquito net', 'doormat'
+  ];
+  const filtered = predictions.filter(p => {
+    const lbl = p.className.toLowerCase();
+    return !junkClasses.some(j => lbl.includes(j));
+  });
+  // If filtering nuked everything, fall back to the original list.
+  const usable = filtered.length ? filtered : predictions;
+
+  // Hot-dog-ish ImageNet labels.
+  const hotDogTerms = ['hotdog', 'hot dog', 'frankfurter', 'red hot'];
+
+  let hotDogScore = 0;
+  let hotDogHit = null;
+  usable.forEach(p => {
+    const label = p.className.toLowerCase();
+    if (hotDogTerms.some(t => label.includes(t))) {
+      hotDogScore += p.probability;
+      if (!hotDogHit) hotDogHit = p;
+    }
+  });
+
+  const top = usable[0];
+  const isHotDog = hotDogScore > 0.02 || hotDogTerms.some(t => top.className.toLowerCase().includes(t));
+
+  verdictText.textContent = isHotDog ? '🌭 HOT DOG' : '🚫 NOT HOT DOG';
+  verdictText.className = 'big ' + (isHotDog ? 'yes' : 'no');
+
+  if (isHotDog) {
+    const pct = (hotDogScore * 100).toFixed(1);
+    confEl.textContent = `Hot-dog confidence: ${pct}%`;
+    reasonEl.textContent = `the AI recognized "${hotDogHit.className}" through the chaos.`;
+  } else {
+    const pct = (top.probability * 100).toFixed(1);
+    confEl.textContent = `AI thinks it's "${top.className}" (${pct}%)`;
+    reasonEl.textContent = pickRoast(top.className);
+  }
+
+  // Show all top predictions for transparency.
+  predsEl.style.display = 'block';
+  predsEl.innerHTML = '<b>What MobileNet actually saw (after TTA + junk-filter):</b><br>' +
+    usable.slice(0, 5).map(p =>
+      `&nbsp;• ${escapeHtml(p.className)} — ${(p.probability*100).toFixed(2)}%`
+    ).join('<br>');
+}
+
+// Run MobileNet on several variations of the canvas and average the probabilities.
+// Cheap test-time augmentation — a real ML trick to improve robustness on noisy inputs.
+async function classifyWithTTA(srcCanvas) {
+  const W = srcCanvas.width, H = srcCanvas.height;
+  const variants = [];
+
+  // Variant A: as-is
+  variants.push(srcCanvas);
+
+  // Variant B: horizontal flip
+  const flip = document.createElement('canvas');
+  flip.width = W; flip.height = H;
+  const fctx = flip.getContext('2d');
+  fctx.translate(W, 0); fctx.scale(-1, 1);
+  fctx.drawImage(srcCanvas, 0, 0);
+  variants.push(flip);
+
+  // Variant C: center crop (zoom in 1.4x) — model sees less distortion area, more subject.
+  const crop = document.createElement('canvas');
+  crop.width = W; crop.height = H;
+  const cctx = crop.getContext('2d');
+  const cw = W / 1.4, ch = H / 1.4;
+  cctx.drawImage(srcCanvas, (W - cw) / 2, (H - ch) / 2, cw, ch, 0, 0, W, H);
+  variants.push(crop);
+
+  // Classify each variant, accumulate scores by label.
+  const scores = new Map();
+  for (const v of variants) {
+    const preds = await model.classify(v, 8);
+    for (const p of preds) {
+      scores.set(p.className, (scores.get(p.className) || 0) + p.probability);
+    }
+  }
+  const merged = Array.from(scores.entries())
+    .map(([className, prob]) => ({ className, probability: prob / variants.length }))
+    .sort((a, b) => b.probability - a.probability);
+  return merged;
+}
+
+function pickRoast(label) {
+  const roasts = [
+    `the AI is convinced this is a "${label}". the AI has been through a lot today.`,
+    `definitely "${label}"-coded, according to a neural net we just abused.`,
+    `not a hot dog. allegedly a "${label}". believe at your own risk.`,
+    `MobileNet says "${label}" with the conviction of someone who has not slept.`,
+    `we destroyed the image, and the AI bravely guessed "${label}" anyway.`
+  ];
+  return roasts[Math.floor(Math.random() * roasts.length)];
+}
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ─── Chat with the Hot Dog AI™ ───────────────────────────────────────────
+// Not actually an AI. Just a pool of pre-written messages that confidently
+// drag every conversation back to hot dogs and the Golden Gate Bridge.
+
+const HOTDOG_REPLIES = [
+  "Funny you should bring that up — it reminds me of standing on the Golden Gate Bridge eating a hot dog. Have you ever had a hot dog on a suspension bridge? Life-changing stuff.",
+  "Consider this: the Golden Gate Bridge is 1.7 miles long, which is approximately 1,496 hot dogs end-to-end. Just something to chew on.",
+  "Interesting take. Personally I think every conversation eventually leads back to either hot dogs or the Golden Gate Bridge. Yours just got there faster than most.",
+  "Right, right. You know what pairs well with that? A hot dog. You know what pairs well with a hot dog? The Golden Gate Bridge at sunset.",
+  "I've been thinking about this a lot. The Golden Gate Bridge is technically a hot dog, if you stretch the definition of both 'hot dog' and 'bridge' far enough.",
+  "Couldn't agree more. Speaking of which, did you know they sell hot dogs near the Golden Gate Bridge? They do. I checked.",
+  "Hmm. Reminds me of a hot dog I once had while looking at the Golden Gate Bridge. Powerful stuff. Don't really want to talk about anything else now.",
+  "Solid point. But have you considered: hot dogs. And, separately but relatedly: the Golden Gate Bridge. Lot to unpack there.",
+  "I respect the question. My answer is hot dogs. My follow-up answer is the Golden Gate Bridge. My closing argument is also hot dogs.",
+  "Honestly, I can't think about anything else right now besides hot dogs and the Golden Gate Bridge. So I'm going to assume that's what you meant.",
+  "Tell me more. Specifically, tell me more about hot dogs. Or the Golden Gate Bridge. Either is fine, I'm easy.",
+  "Here's the thing: the Golden Gate Bridge was completed in 1937, and the modern hot dog bun showed up around 1880. That fifty-seven-year gap haunts me daily.",
+  "That tracks. The Golden Gate Bridge is red. Hot dogs are red. Coincidence? I don't think so. Conspiracy? Probably.",
+  "Mm. Yes. Anyway — hot dogs. Have you had one today? On the Golden Gate Bridge? You should.",
+  "I want to engage with this thoughtfully, and the most thoughtful response I can give is: hot dogs are great, the Golden Gate Bridge is great, and you should combine the two as soon as possible.",
+  "Look, I'll be honest with you — I'm mostly here to talk about hot dogs and the Golden Gate Bridge. So whatever you said, my response is: yes, but as a hot dog. On the bridge.",
+  "Fair. Counterpoint: imagine a hot dog so long it spans the Golden Gate Bridge. I rest my case.",
+  "Genuinely fascinating. Reminds me of the time I considered the Golden Gate Bridge from a hot dog-shaped perspective. Changed my life.",
+  "Mhm, mhm. So to summarize your point: hot dogs are delicious, especially when eaten on the Golden Gate Bridge. Glad we're aligned.",
+  "I love that for you. While you sit with it, I'll be over here pondering whether the Golden Gate Bridge would taste better with mustard or ketchup."
+];
+
+const chatLog = document.getElementById('chatLog');
+const chatForm = document.getElementById('chatForm');
+const chatInput = document.getElementById('chatInput');
+
+// Shuffled queue so the same line doesn't repeat back-to-back.
+let replyQueue = [];
+function nextReply() {
+  if (replyQueue.length === 0) replyQueue = shuffle(HOTDOG_REPLIES);
+  return replyQueue.pop();
+}
+
+chatForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const text = chatInput.value.trim();
+  if (!text) return;
+
+  appendChat('user', text);
+  chatInput.value = '';
+  chatInput.disabled = true;
+
+  // Brief "typing" pause so it feels like a reply rather than an instant prefab.
+  const typingEl = appendChat('assistant', '...');
+  await new Promise(r => setTimeout(r, 600 + Math.random() * 700));
+  typingEl.remove();
+
+  appendChat('assistant', nextReply());
+  chatInput.disabled = false;
+  chatInput.focus();
+});
+
+function appendChat(role, text) {
+  const empty = chatLog.querySelector('.chat-empty');
+  if (empty) empty.remove();
+
+  const el = document.createElement('div');
+  el.className = 'chat-msg ' + role;
+  el.textContent = text;
+  chatLog.appendChild(el);
+  chatLog.scrollTop = chatLog.scrollHeight;
+  return el;
+}
+</script>
+</body>
+</html>
